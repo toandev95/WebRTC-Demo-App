@@ -1,7 +1,22 @@
+// const updateBandwidth = (sdp, bandwidth) => {
+//   if (sdp.indexOf("b=AS:") == -1) {
+//     sdp = sdp.replace(/c=IN (.*)\r\n/, "c=IN $1\r\nb=AS:" + bandwidth + "\r\n");
+//   } else {
+//     sdp = sdp.replace(new RegExp("b=AS:.*\r\n"), "b=AS:" + bandwidth + "\r\n");
+//   }
+
+//   return sdp;
+// };
+
+// const removeBandwidth = (sdp) =>
+//   sdp.replace(/b=AS:.*\r\n/, "").replace(/b=TIAS:.*\r\n/, "");
+
 (async () => {
   const localStream = await navigator.mediaDevices.getUserMedia({
     video: true,
-    audio: true,
+    audio: {
+      echoCancellation: false,
+    },
   });
 
   const localVideo = document.querySelector("#local");
@@ -24,11 +39,9 @@
     conns[sid] = new RTCPeerConnection({
       iceServers: [
         {
-          urls: [
-            "stun:stun.l.google.com:19302",
-            "stun:stun1.l.google.com:19302",
-            "stun:stun2.l.google.com:19302",
-          ],
+          urls: "turn:numb.viagenie.ca",
+          username: "toandev.95@gmail.com",
+          credential: "1234qwer",
         },
       ],
     });
@@ -54,9 +67,7 @@
         socket.emit("request_P2P_connection_candidate", {
           sid,
           data: {
-            candidate: ev.candidate.candidate,
-            sdpMid: ev.candidate.sdpMid,
-            sdpMLineIndex: ev.candidate.sdpMLineIndex,
+            candidate: ev.candidate,
           },
         });
       }
@@ -66,7 +77,7 @@
       conns[sid].addTrack(track, localStream);
     });
 
-    if (sid != socket.id) {
+    if (Object.keys(conns).length >= 2) {
       const desc = await conns[sid].createOffer();
       await conns[sid].setLocalDescription(desc);
 
@@ -76,15 +87,6 @@
       });
     }
   };
-
-  socket.on("connected", (ev) => {
-    // console.log(ev);
-
-    socket.emit("request_enter_room", {
-      // room_name: "Toan",
-      room: "6687c994-d183-48cb-a866-b0d9b73948d1",
-    });
-  });
 
   socket.onAny(async (eventName, payload) => {
     console.log(eventName, payload);
@@ -114,8 +116,10 @@
           if (!conns[sid]) {
             await createConn(sid);
 
-            if (sid != socket.id) {
-              await conns[sid].setRemoteDescription(data);
+            if (sid != socket.id && data.type == "offer") {
+              await conns[sid].setRemoteDescription(
+                new RTCSessionDescription(data)
+              );
 
               const desc = await conns[sid].createAnswer();
               await conns[sid].setLocalDescription(
@@ -139,7 +143,9 @@
             const sid = j.from_user.sid;
             const data = j.data;
 
-            await conns[sid].setRemoteDescription(data);
+            await conns[sid].setRemoteDescription(
+              new RTCSessionDescription(data)
+            );
           }
         }
         break;
@@ -152,7 +158,11 @@
             const sid = j.from_user.sid;
             const data = j.data;
 
-            await conns[sid].addIceCandidate(new RTCIceCandidate(data));
+            if (data.candidate) {
+              await conns[sid].addIceCandidate(
+                new RTCIceCandidate(data.candidate)
+              );
+            }
           }
         }
         break;
@@ -166,8 +176,10 @@
 
             delete conns[sid];
 
-            const video = document.querySelector(`[data-socket=${sid}]`);
-            document.querySelector("#conns").removeChild(video);
+            try {
+              const video = document.querySelector(`[data-socket=${sid}]`);
+              document.querySelector("#conns").removeChild(video);
+            } catch (error) {}
           }
         }
         break;
@@ -175,5 +187,15 @@
       default:
         break;
     }
+  });
+
+  socket.on("connected", async (ev) => {
+    // const { sid } = JSON.parse(ev);
+    // console.log();
+
+    socket.emit("request_enter_room", {
+      // room_name: "Toan",
+      room: "6687c994-d183-48cb-a866-b0d9b73948d1",
+    });
   });
 })();

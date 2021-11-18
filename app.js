@@ -36,7 +36,7 @@ io.on("connection", (socket) => {
     io.sockets.emit(
       "request_offer",
       JSON.stringify({
-        from_user: { sid: socket.id },
+        from_user: { sid },
         data: ev.data,
       })
     );
@@ -46,7 +46,7 @@ io.on("connection", (socket) => {
     io.sockets.emit(
       "request_answer",
       JSON.stringify({
-        from_user: { sid: socket.id },
+        from_user: { sid },
         data: ev.data,
       })
     );
@@ -56,14 +56,14 @@ io.on("connection", (socket) => {
     io.sockets.emit(
       "request_candidate",
       JSON.stringify({
-        from_user: { sid: socket.id },
+        from_user: { sid },
         data: ev.data,
       })
     );
   });
 
   socket.on("disconnect", () => {
-    io.sockets.emit("left_room", JSON.stringify({ sid: socket.id }));
+    io.sockets.emit("left_room", JSON.stringify({ sid }));
   });
 
   socket.emit(
