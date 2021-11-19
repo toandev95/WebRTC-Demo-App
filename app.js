@@ -83,7 +83,7 @@ io.on("connection", (socket) => {
     })
   );
 
-  console.log("Có client kết nối!", socket.id);
+  console.log("Có client kết nối!", sid);
 });
 
 server.listen(3000, "0.0.0.0", () => {

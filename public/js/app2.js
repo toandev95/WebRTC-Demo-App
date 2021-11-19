@@ -40,20 +40,37 @@ const main = async () => {
       trickle: false,
       config: {
         iceServers: [
-          {
-            urls: "stun:stun.l.google.com:19302",
-          },
+          // {
+          //   urls: "stun:stun.l.google.com:19302",
+          // },
           {
             urls: "turn:34.87.147.10:3478?transport=tcp",
             username: "toandev",
             credential: "123456",
           },
-          {
-            urls: "turn:numb.viagenie.ca?transport=udp",
-            username: "toandev.95@gmail.com",
-            credential: "1234qwer",
-          },
+          // {
+          //   urls: "turn:numb.viagenie.ca?transport=udp",
+          //   username: "toandev.95@gmail.com",
+          //   credential: "1234qwer",
+          // },
         ],
+      },
+      sdpTransform: (sdp) => {
+        const bandwidth = 250;
+
+        if (sdp.indexOf("b=AS:") === -1) {
+          sdp = sdp.replace(
+            /c=IN (.*)\r\n/,
+            "c=IN $1\r\nb=AS:" + bandwidth + "\r\n"
+          );
+        } else {
+          sdp = sdp.replace(
+            new RegExp("b=AS:.*\r\n"),
+            "b=AS:" + bandwidth + "\r\n"
+          );
+        }
+
+        return sdp;
       },
     });
 
