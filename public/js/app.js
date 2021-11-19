@@ -1,21 +1,15 @@
-// const updateBandwidth = (sdp, bandwidth) => {
-//   if (sdp.indexOf("b=AS:") == -1) {
-//     sdp = sdp.replace(/c=IN (.*)\r\n/, "c=IN $1\r\nb=AS:" + bandwidth + "\r\n");
-//   } else {
-//     sdp = sdp.replace(new RegExp("b=AS:.*\r\n"), "b=AS:" + bandwidth + "\r\n");
-//   }
-
-//   return sdp;
-// };
-
-// const removeBandwidth = (sdp) =>
-//   sdp.replace(/b=AS:.*\r\n/, "").replace(/b=TIAS:.*\r\n/, "");
-
 (async () => {
   const localStream = await navigator.mediaDevices.getUserMedia({
     video: true,
     audio: {
+      autoGainControl: false,
+      channelCount: 2,
       echoCancellation: false,
+      latency: 0,
+      noiseSuppression: false,
+      sampleRate: 48000,
+      sampleSize: 16,
+      volume: 1.0,
     },
   });
 
@@ -26,7 +20,7 @@
   localVideo.autoplay = true;
   localVideo.playsInline = true;
 
-  const conns = {};
+  const peers = {};
 
   const socket = io.connect({
     transports: ["websocket"],
@@ -35,8 +29,8 @@
     },
   });
 
-  const createConn = async (sid) => {
-    conns[sid] = new RTCPeerConnection({
+  const addPeer = async (sid) => {
+    peers[sid] = new RTCPeerConnection({
       iceServers: [
         {
           urls: "turn:numb.viagenie.ca",
@@ -46,21 +40,28 @@
       ],
     });
 
-    conns[sid].onaddstream = (ev) => {
+    peers[sid].ontrack = (ev) => {
       // console.log(ev);
 
-      const remoteVideo = document.createElement("video");
-      remoteVideo.setAttribute("data-socket", sid);
-      remoteVideo.srcObject = ev.stream;
-      remoteVideo.width = 300;
-      remoteVideo.muted = false;
-      remoteVideo.autoplay = true;
-      remoteVideo.playsInline = true;
+      console.log(ev);
 
-      document.querySelector("#conns").appendChild(remoteVideo);
+      let remoteVideo = document.getElementById(sid);
+
+      if (!remoteVideo) {
+        remoteVideo = document.createElement("video");
+        remoteVideo.id = sid;
+        remoteVideo.width = 300;
+        remoteVideo.muted = false;
+        remoteVideo.autoplay = true;
+        remoteVideo.playsInline = true;
+
+        document.querySelector("#peers").appendChild(remoteVideo);
+      }
+
+      remoteVideo.srcObject = ev.streams[0];
     };
 
-    conns[sid].onicecandidate = (ev) => {
+    peers[sid].onicecandidate = (ev) => {
       // console.log(ev);
 
       if (ev.candidate && sid != socket.id) {
@@ -74,18 +75,37 @@
     };
 
     localStream.getTracks().forEach((track) => {
-      conns[sid].addTrack(track, localStream);
+      peers[sid].addTrack(track, localStream);
     });
 
-    if (Object.keys(conns).length >= 2) {
-      const desc = await conns[sid].createOffer();
-      await conns[sid].setLocalDescription(desc);
+    if (Object.keys(peers).length >= 2) {
+      if (sid != socket.id) {
+        const desc = await peers[sid].createOffer();
+        await peers[sid].setLocalDescription(desc);
 
-      socket.emit("request_P2P_connection_offer", {
-        sid,
-        data: desc,
-      });
+        socket.emit("request_P2P_connection_offer", {
+          sid,
+          data: desc,
+        });
+      }
     }
+  };
+
+  const removePeer = (sid) => {
+    const videoElm = document.getElementById(sid);
+
+    if (videoElm) {
+      const tracks = videoElm.srcObject.getTracks();
+
+      tracks.forEach(function (track) {
+        track.stop();
+      });
+
+      document.querySelector("#peers").removeChild(videoElm);
+    }
+
+    peers[sid].close();
+    delete peers[sid];
   };
 
   socket.onAny(async (eventName, payload) => {
@@ -99,8 +119,8 @@
           if (joint && info) {
             const { sid } = info;
 
-            if (!conns[sid]) {
-              await createConn(sid);
+            if (!peers[sid]) {
+              await addPeer(sid);
             }
           }
         }
@@ -113,16 +133,20 @@
           const sid = j.from_user.sid;
           const data = j.data;
 
-          if (!conns[sid]) {
-            await createConn(sid);
+          if (!peers[sid]) {
+            await addPeer(sid);
 
             if (sid != socket.id && data.type == "offer") {
-              await conns[sid].setRemoteDescription(
+              await peers[sid].setRemoteDescription(
                 new RTCSessionDescription(data)
               );
 
-              const desc = await conns[sid].createAnswer();
-              await conns[sid].setLocalDescription(
+              const desc = await peers[sid].createAnswer();
+              desc.sdp = desc.sdp.replace(
+                "useinbandfec=1",
+                "useinbandfec=1; stereo=1; maxaveragebitrate=510000"
+              );
+              await peers[sid].setLocalDescription(
                 new RTCSessionDescription(desc)
               );
 
@@ -143,7 +167,7 @@
             const sid = j.from_user.sid;
             const data = j.data;
 
-            await conns[sid].setRemoteDescription(
+            await peers[sid].setRemoteDescription(
               new RTCSessionDescription(data)
             );
           }
@@ -159,9 +183,13 @@
             const data = j.data;
 
             if (data.candidate) {
-              await conns[sid].addIceCandidate(
-                new RTCIceCandidate(data.candidate)
-              );
+              try {
+                await peers[sid].addIceCandidate(
+                  new RTCIceCandidate(data.candidate)
+                );
+              } catch (error) {
+                console.log(error);
+              }
             }
           }
         }
@@ -171,15 +199,8 @@
         {
           const j = JSON.parse(payload);
 
-          if (j.sid && conns[j.sid]) {
-            const sid = j.sid;
-
-            delete conns[sid];
-
-            try {
-              const video = document.querySelector(`[data-socket=${sid}]`);
-              document.querySelector("#conns").removeChild(video);
-            } catch (error) {}
+          if (j.sid && peers[j.sid]) {
+            removePeer(j.sid);
           }
         }
         break;
