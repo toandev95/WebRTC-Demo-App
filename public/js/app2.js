@@ -7,10 +7,10 @@ const main = async () => {
     },
     video: {
       width: {
-        max: 300,
+        max: 720,
       },
       height: {
-        max: 300,
+        max: 480,
       },
     },
   });
@@ -38,9 +38,12 @@ const main = async () => {
       config: {
         iceServers: [
           {
-            urls: "stun:stun.l.google.com:19302",
+            urls: "turn:34.87.147.10:3478",
+            username: "toandev",
+            credential: "123456",
           },
         ],
+        iceTransportPolicy: "relay",
       },
     });
 
