@@ -1,3 +1,5 @@
+const peers = {};
+
 const main = async () => {
   const localStream = await navigator.mediaDevices.getUserMedia({
     audio: {
@@ -29,25 +31,35 @@ const main = async () => {
     },
   });
 
-  const peers = {};
-
   const addPeer = (sid, initiator) => {
     peers[sid] = new SimplePeer({
       initiator,
       stream: localStream,
+      reconnectTimer: 100,
+      iceTransportPolicy: "relay",
+      trickle: false,
       config: {
         iceServers: [
           {
-            urls: "turn:34.87.147.10:3478",
+            urls: "stun:stun.l.google.com:19302",
+          },
+          {
+            urls: "turn:34.87.147.10:3478?transport=tcp",
             username: "toandev",
             credential: "123456",
           },
+          {
+            urls: "turn:numb.viagenie.ca?transport=udp",
+            username: "toandev.95@gmail.com",
+            credential: "1234qwer",
+          },
         ],
-        iceTransportPolicy: "relay",
       },
     });
 
     peers[sid].on("signal", (data) => {
+      console.log(data);
+
       switch (data.type) {
         case "offer":
           socket.emit("request_P2P_connection_offer", {
@@ -94,7 +106,7 @@ const main = async () => {
     if (videoEl) {
       const tracks = videoEl.srcObject.getTracks();
 
-      tracks.forEach(function (track) {
+      tracks.forEach((track) => {
         track.stop();
       });
 
@@ -102,24 +114,33 @@ const main = async () => {
       document.getElementById("peers").removeChild(videoEl);
     }
 
-    if (peers[sid]) {
-      peers[sid].destroy();
-    }
+    peers[sid].destroy();
 
     delete peers[sid];
   };
 
   socket.onAny((eventName, args) => {
-    console.log(eventName, args);
+    console.log(eventName);
 
     const payload = JSON.parse(args);
 
     switch (eventName) {
       case "connected":
-        socket.emit("request_enter_room", {
-          // room_name: "Toan",
-          room: "6687c994-d183-48cb-a866-b0d9b73948d1",
-        });
+        {
+          socket.emit("request_enter_room", {
+            // room_name: "Toan",
+            room: "6687c994-d183-48cb-a866-b0d9b73948d1",
+          });
+        }
+
+        break;
+
+      case "disconnect":
+        {
+          for (let sid in peers) {
+            removePeer(sid);
+          }
+        }
 
         break;
 
@@ -140,12 +161,12 @@ const main = async () => {
           const { from_user, data } = payload;
           const { sid } = from_user;
 
-          if (sid == socket.id) {
-            return;
+          if (!peers[sid]) {
+            addPeer(sid, sid == socket.id);
           }
 
-          if (!peers[sid]) {
-            addPeer(sid, false);
+          if (sid == socket.id) {
+            return;
           }
 
           peers[sid].signal(data);
@@ -156,7 +177,7 @@ const main = async () => {
         {
           const { sid } = payload;
 
-          if (sid && peers[sid]) {
+          if (peers[sid]) {
             removePeer(sid);
           }
         }

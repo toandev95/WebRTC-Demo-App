@@ -8,6 +8,8 @@ const io = new Server(server);
 
 app.use(express.static("public"));
 
+const peers = {};
+
 io.use((socket, next) => {
   const { fullname } = socket.handshake.auth;
 
@@ -22,18 +24,20 @@ io.on("connection", (socket) => {
   const sid = socket.id;
   const { fullname } = socket.handshake.auth;
 
+  peers[sid] = socket;
+
   socket.on("request_enter_room", () => {
     io.sockets.emit(
       "entered_room",
       JSON.stringify({
         joint: new Date(),
-        info: { sid },
+        info: { sid, fullname },
       })
     );
   });
 
   socket.on("request_P2P_connection_offer", (ev) => {
-    io.sockets.emit(
+    peers[ev.sid].emit(
       "request_offer",
       JSON.stringify({
         from_user: { sid },
@@ -43,7 +47,7 @@ io.on("connection", (socket) => {
   });
 
   socket.on("request_P2P_connection_answer", (ev) => {
-    io.sockets.emit(
+    peers[ev.sid].emit(
       "request_answer",
       JSON.stringify({
         from_user: { sid },
@@ -53,7 +57,7 @@ io.on("connection", (socket) => {
   });
 
   socket.on("request_P2P_connection_candidate", (ev) => {
-    io.sockets.emit(
+    peers[ev.sid].emit(
       "request_candidate",
       JSON.stringify({
         from_user: { sid },
@@ -64,6 +68,8 @@ io.on("connection", (socket) => {
 
   socket.on("disconnect", () => {
     io.sockets.emit("left_room", JSON.stringify({ sid }));
+
+    delete peers[sid];
   });
 
   socket.emit(
